@@ -69,6 +69,7 @@ class UI(Frame):
         self.includeCR.set(0)
         self.includeCRButton = tk.Checkbutton(self.bakFrame, text="Include Channel Result Info", onvalue=1, offvalue=0, variable=self.includeCR, bg='white')
         self.includeCRButton.place(relx=0.675, rely=0.70, anchor='nw', relwidth=0.30, relheight=0.1)
+
     def load_raw_data(self):
         self.ReadingLabels = tk.Label(self.bakFrame, text="Parsing Raw Data", bg='blue', fg='white')
         self.ReadingLabels.place(relx=0, rely=0.825, anchor='nw', relwidth=1, relheight=0.20)
@@ -101,11 +102,12 @@ class UI(Frame):
             print("Failed to process data.")
         self.ReadingLabels.destroy()
     def save_data(self):
+        print(self.includeXPCR, self.includeHM, self.includeTS, self.includeSP, self.includeCL, self.includeCR)
         self.ReadingLabels = tk.Label(self.bakFrame, text="Matching TADM data with NMDX Data", bg='blue', fg='white')
         self.ReadingLabels.place(relx=0, rely=0.825, anchor='nw', relwidth=1, relheight=0.15)
         self.bakFrame.update()
         try:
-            tadm_output = self.myTadmHelper.tadm_merger(include_XPCR_info=self.includeXPCR,include_HM_info=self.includeHM,include_TS_info=self.includeTS,include_SP_info=self.includeSP,include_ConsLot_info=self.includeCL, include_ChannelResult_info=self.includeCR)
+            tadm_output = self.myTadmHelper.tadm_merger(include_XPCR_info=self.includeXPCR.get(),include_HM_info=self.includeHM.get(),include_TS_info=self.includeTS.get(),include_SP_info=self.includeSP.get(),include_ConsLot_info=self.includeCL.get(), include_ChannelResult_info=self.includeCR.get())
             output_dir = asksaveasfilename(title="Choose where to save TADM Data", defaultextension=".xlsx", initialfile="TADM_output", filetypes=[("CSV", "*.csv")])
             tadm_output.to_csv(output_dir)
         except:
@@ -476,16 +478,16 @@ class TadmHelper:
                 
         self.conversion_frame = self.conversion_frame[['Test Guid', 'Replicate Number', 'ParserID', 'CurveID']].set_index(['Test Guid','Replicate Number', 'ParserID', 'CurveID'])
 
-    def tadm_merger(self, include_XPCR_info=False, include_HM_info=False, include_TS_info=False, include_SP_info=False, include_ConsLot_info=False, include_ChannelResult_info=False):
+    def tadm_merger(self, include_XPCR_info=0, include_HM_info=0, include_TS_info=0, include_SP_info=0, include_ConsLot_info=0, include_ChannelResult_info=0):
         raw_data_file_columns = ['Test Guid','Sample ID', 'Replicate Number','Overall Result','N500 Serial Number']
         
-        if include_XPCR_info == True:
+        if include_XPCR_info == 1:
             raw_data_file_columns = raw_data_file_columns + ['XPCR Module Serial','XPCR Module Index','Pcr Cartridge Lane']
 
-        if include_HM_info:
+        if include_HM_info == 1:
             raw_data_file_columns = raw_data_file_columns +['Heater Module Serial','Heater Module Index','Capture Plate Well']
 
-        if include_TS_info:
+        if include_TS_info == 1:
             raw_data_file_columns = raw_data_file_columns +['Test Strip NeuMoDx Carrier', 
                                                             'Test Strip NeuMoDx Carrier Position', 
                                                             'Test Strip NeuMoDx Well',
@@ -496,7 +498,7 @@ class TadmHelper:
                                                             'Test Strip LDT Master Mix Carrier Position',
                                                             'Test Strip LDT Master Mix Well']
 
-        if include_SP_info: 
+        if include_SP_info == 1: 
             raw_data_file_columns = raw_data_file_columns + ['Sample Type', 
                                                             'Sample Specimen Type', 
                                                             'Test Specimen Type', 
@@ -504,7 +506,7 @@ class TadmHelper:
                                                             'Assay Name', 
                                                             'Result Code', 
                                                             'Status']
-        if include_ConsLot_info:
+        if include_ConsLot_info == 1:
             raw_data_file_columns = raw_data_file_columns + ['LDT Test Strip Primer Probe Lot',
                                                             'LDT Test Strip Master Mix Lot',
                                                             'Pcr Cartridge Lot',
@@ -513,7 +515,7 @@ class TadmHelper:
                                                             'Buffer Lot',
                                                             'Release Reagent Lot',
                                                             'Wash Reagent Lot']
-        if include_ChannelResult_info:
+        if include_ChannelResult_info == 1:
             for channel in self.channels:
                 raw_data_file_columns = raw_data_file_columns+[channel + " " + x for x in ['Localized Result', 'Ct', 'End Point Fluorescence', 'EPR', 'Max Peak Height', 'Baseline Slope', 'Baseline Y Intercept', 'Blank Check - 1st 3 Reads'] if channel + " " + x in self.raw_data.columns]
 
