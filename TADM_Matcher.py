@@ -103,7 +103,7 @@ class UI(Frame):
         self.ReadingLabels.destroy()
     def save_data(self):
         print(self.includeXPCR, self.includeHM, self.includeTS, self.includeSP, self.includeCL, self.includeCR)
-        self.ReadingLabels = tk.Label(self.bakFrame, text="Matching TADM data with NMDX Data", bg='blue', fg='white')
+        self.ReadingLabels = tk.Label(self.bakFrame, text="Exporting CSV File of Matched TADM Data", bg='blue', fg='white')
         self.ReadingLabels.place(relx=0, rely=0.825, anchor='nw', relwidth=1, relheight=0.15)
         self.bakFrame.update()
         try:
