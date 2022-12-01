@@ -78,28 +78,34 @@ class UI(Frame):
 
         files = askopenfilenames(filetypes = files, defaultextension = files)
         for file in files:
+            print("Reading Raw Data from file: "+str(file))
             self.raw_data = pd.concat([self.raw_data,self.myParser.scrapeFile(file=file, filename='test')])
-        
+            self.myParser.getADFParameters(file)
+            
         self.myTadmHelper = TadmHelper(self.raw_data)
         self.ReadingLabels.destroy()  
     def get_tadm_data(self):
         self.ReadingLabels = tk.Label(self.bakFrame, text="Parsing TADM Data", bg='blue', fg='white')
         self.ReadingLabels.place(relx=0, rely=0.825, anchor='nw', relwidth=1, relheight=0.20)
         self.bakFrame.update()
-        try:
-            file_dir = askdirectory()
-            self.myTadmHelper.get_tadms(file_dir)
-        except:
-            print("Failed to collect TADM Data")
+        file_dir = askdirectory()
+        for folder in os.listdir(file_dir):
+            
+            if os.path.isdir(file_dir+"/"+folder):
+                self.myTadmHelper.get_tadms(file_dir+"/"+folder)
+
+                print("reading data from folder: "+file_dir+"/"+folder)
+            
+                print("Number of TADM entries Loaded: "+str(len(self.myTadmHelper.tadm_data)))
         self.ReadingLabels.destroy()
     def process_data(self):
         self.ReadingLabels = tk.Label(self.bakFrame, text="Matching TADM data with NMDX Data", bg='blue', fg='white')
         self.ReadingLabels.place(relx=0, rely=0.825, anchor='nw', relwidth=1, relheight=0.20)
         self.bakFrame.update()
-        try:
-            self.myTadmHelper.tadm_hunter()
-        except:
-            print("Failed to process data.")
+        #try:
+        self.myTadmHelper.tadm_hunter()
+        #except:
+        #print("Failed to process data.")
         self.ReadingLabels.destroy()
     def save_data(self):
         print(self.includeXPCR, self.includeHM, self.includeTS, self.includeSP, self.includeCL, self.includeCR)
@@ -135,7 +141,8 @@ class nmdx_file_parser:
     """
     def __init__(self):
         self.file_data = {}
-
+        self.adf_TADM_order = {}
+    
     def readChannelData(file, sheet, channel):
 
         channelData_all = pd.read_excel(io=file,sheet_name=sheet)
@@ -319,6 +326,81 @@ class nmdx_file_parser:
 
         return flat_data.reset_index()
 
+    def getADFParameters(self, file):
+        """
+        A Function used to get ADF Parameters from ADF Tabs
+        
+        Parameters
+        ----------
+        file (str): Filepath of the NeuMoDx Raw Data File (xlsx) to read. 
+
+        Returns
+        -------
+        A Dictionary serializing the Parameters for ADF.
+        """
+
+        file_data = pd.read_excel(io=file,sheet_name=None)
+
+        def get_adf_liquid_handling_parameters(adf_df):
+            """
+            A function used to provide an order to for processing logic for the liquid handling parameters included in a NeuMoDx ADF Tab in Raw Data Export.
+            **Note this function is based on of Tab observed in 1.9.2.6 file format, and is is subject to break if References are changed.
+
+            Parameters
+            ----------
+            adf_df (pd.DataFrame):  A DataFrame Representation of an ADF Tab included in NeuMoDx Raw Data Exports.
+
+            Returns
+            -------
+            A Dictionary containing the Liquid Class Names and order for the TADM files used by a NeuMoDx ADFs.
+
+            """
+            adf_df = adf_df.set_index('Key')
+            adf_dict = adf_df['Value'].to_dict()
+            ##Iterate through ADF_Dictionary to find Specimen Types included in ADF.
+            specimenTypes = []
+            for setting in [x for x in adf_dict if 'Specimen' in x and 'Liquid Class' in x]:
+                specimenType = setting.split(' -')[0].replace('Specimen ','')
+                if specimenType not in specimenTypes:
+                    specimenTypes.append(specimenType)
+
+            ##initialized empty dictionary describing 
+            adf_liquid_class_orders = {}
+
+            ##Define Mapping for ADF parameters to lh order
+            lh_order = {'Buffer Liquid Class':1,
+                        'Sample Dispense Extraction Plate Liquid Class': 2,
+                        'Specimen Liquid Class':3,
+                        'Extraction Aspirate Extraction Plate Liquid Class':4,
+                        'Cartridge Dispense Empty Liquid Class':6,
+                        'Aspirate From Cartridge Liquid Class':8,
+                        'NeuMoDx Test Strip Liquid Class':9}
+
+            ##Determine which TADM File Name is associated with each Liquid Handling process.
+            for specimenType in specimenTypes:
+                ##Initialized liquid class order, include TADM files that are universal for each ADF (seal Checks).
+                liquid_class_order = {1:'_Aspirating', 2:'_Dispensing', 3:'_Aspirating', 4:'_Aspirating', 5:'NeuMoDx_HighVolumeFilter_Air_DispenseSurface_Aspirating', 6:'_Dispensing', 7:'NeuMoDx_LHPC1_StandardVolumeFilter_Air_DispenseSurface_Aspirating', 8:'_Aspirating', 9:'_Dispensing', 10:'', 11:'NeuMoDx_LHPC2_StandardVolumeFilter_Air_DispenseSurface_Aspirating', 12:'NMDX_LHPC2_CartBlow_TADM_Dispensing'}
+                
+                ##Iterate over items in adf_dict and map associated TADM File Name to liquid_class_order dictionary.
+                for liquid_class in [x for x in adf_dict if 'Specimen' in x and 'Liquid Class' in x and specimenType == x.split(' -')[0][-1*(len(specimenType)):]]:
+                    for process_type in lh_order:
+                        if process_type in liquid_class:
+                            base = liquid_class_order[lh_order[process_type]]
+                            liquid_class_order[lh_order[process_type]] = adf_dict[liquid_class]+base
+
+                liquid_class_order[10] = liquid_class_order[9].replace('_Dispensing', '_Aspirating')
+                liquid_class_order = dict((value, key) for (key, value) in liquid_class_order.items())
+                adf_liquid_class_orders[specimenType.replace(' ', '')] = liquid_class_order
+
+            return adf_liquid_class_orders
+        
+        for adf_sheet in [x for x in file_data if 'ADF' in x]:
+            
+            adf_label = adf_sheet.replace('ADF ', '')
+            if adf_label not in self.adf_TADM_order:
+                adf = file_data[adf_sheet]
+                self.adf_TADM_order[adf_label] = get_adf_liquid_handling_parameters(adf)
+
 class TadmHelper:
 
     def __init__(self, raw_data):
@@ -331,7 +413,7 @@ class TadmHelper:
         self.raw_data = raw_data.copy()
         self.channels = sorted(raw_data['Channel'].unique()) 
         self.raw_data.drop_duplicates(subset=['Test Guid', 'Replicate Number'], inplace=True)
-        self.raw_data_liquid_handle_processes = self.raw_data[['Test Guid', 'Replicate Number', 'Sample ID', 'Start Date/Time', 'LHPA Start Date Time', 'LHPB Start Date Time', 'LHPC Start Date Time', 'PCR Start Date Time', 'LHPA ADP Position', 'LHPB ADP Position', 'LHPC ADP Position']]
+        self.raw_data_liquid_handle_processes = self.raw_data[['Test Guid', 'Replicate Number', 'Sample ID', 'Start Date/Time', 'LHPA Start Date Time', 'LHPB Start Date Time', 'LHPC Start Date Time', 'PCR Start Date Time', 'LHPA ADP Position', 'LHPB ADP Position', 'LHPC ADP Position', 'Assay Name', 'Assay Version', 'Test Specimen Type']]
 
         self.processGroups = {}
         for process in ['LHPA', 'LHPB', 'LHPC']:
@@ -376,7 +458,22 @@ class TadmHelper:
         attempt_data.set_index(['ParserID'],append=True)    
         self.tadm_data = pd.concat([self.tadm_data, attempt_data])
 
-    def closest_match(self, sample, main_process, max_time_offset=15, min_time_offset=0):
+    def closest_match(self, sample, main_process, max_time_offset=30, min_time_offset=30, max_time_delta=400):
+       
+        def relabel_seal_check_retries(data, liquidclassname):
+
+            ##Get Minimimum Time for liquidclassname
+
+            min_time = data.loc[data['LiquidClassName']==liquidclassname, 'Time'].min()
+            itr = 0
+            
+            for step in data[data['LiquidClassName']==liquidclassname].index:
+                time_delta = data.loc[step, 'Time'] - min_time
+                if time_delta.total_seconds() < 60 and time_delta.total_seconds() != 0:
+                    itr = itr + 1
+                    data.loc[step, 'LiquidHandlingProcessOrder'] = str(data.loc[step, 'LiquidHandlingProcessOrder']) + "." + str(itr)
+
+            return data
         """
         A function used to apply fuzzy logic to find tadms associated with a NeuMoDx Sample
 
@@ -387,10 +484,12 @@ class TadmHelper:
         max_time_offset (int): An offset in seconds to apply to the maximum time bound applied to TADM search range.
         min_time_offset (int): An offset in seconds to apply to the minimum time bound applied to TADM search range.
         """
-        def find_tadms(channel, repeat_offset=0):
-            ##Get Test Guid of Sample
+        def find_tadms(channel, repeat_offset=0, reschedule=0):
+            ##Get necessary info from sample.
             test_guid = sample['Test Guid'].values[0]
             rep_number = sample['Replicate Number'].values[0]
+            assay = sample['Assay Name'].values[0]+","+sample['Assay Version'].values[0]
+            specimenType = sample['Test Specimen Type'].values[0]
             
             ##Convert Associated Start Date Time to be utc agnostic
             sample[main_process+' Start Date Time'] = sample[main_process+' Start Date Time'].apply(lambda x: x.replace(tzinfo=pytz.utc))
@@ -406,7 +505,7 @@ class TadmHelper:
             
             ##Determine Minimum and Maximum Bounds for time allowed to search within.
             minimum_time_bound_index = processGroupTimes.loc[processGroupTimes['Delta Time']==processGroupTimes['Delta Time'].min(), main_process+" Start Date Time"].index.values[0]
-            
+
             ##Apply a -1 run group offset in the case of a first time repeated sample.
             minimum_time_bound_index = minimum_time_bound_index - repeat_offset
 
@@ -416,10 +515,10 @@ class TadmHelper:
 
             if minimum_time_bound_index+1 < len(processGroupTimes):
                 maximum_time_bound = processGroupTimes.loc[minimum_time_bound_index+1, main_process+" Start Date Time"] + np.timedelta64(max_time_offset, 's')
+                if main_process == 'LHPB':
+                    maximum_time_bound = maximum_time_bound + np.timedelta64(60, 's')
             else:
                 maximum_time_bound = minimum_time_bound + np.timedelta64(5, 'm')
-            
-
             
             ##Filter TADM Reference to only be for the Channel and Time Range allowed to search within
             tadm_reference_channel = self.tadm_data.reset_index(['Channel', 'LiquidClassName', 'StepType','Time'])
@@ -428,15 +527,16 @@ class TadmHelper:
                                                             (tadm_reference_channel['Time']>minimum_time_bound)&
                                                             (tadm_reference_channel['Time']<maximum_time_bound))]
             
-            
+
             ##Determine Delta Time from Time observed for sample process
             tadm_reference_channel['Reference Time'] = time
             tadm_reference_channel['Delta Time'] = (tadm_reference_channel['Time']  - tadm_reference_channel['Reference Time']).astype('timedelta64[s]')
-
-            ##Add Test Guid to TADM reference
+            tadm_reference_channel = tadm_reference_channel[tadm_reference_channel['Delta Time']<max_time_delta]
+            
+            ##Add Test Guid / Replicate Number to TADM reference
             tadm_reference_channel['Test Guid'] = test_guid
             tadm_reference_channel['Replicate Number'] = rep_number
-            tadm_reference_channel = tadm_reference_channel.reset_index()[['ParserID', 'CurveID', 'Test Guid', 'Replicate Number', 'Delta Time', 'LiquidClassName', 'StepType']].sort_values('Delta Time')
+            tadm_reference_channel = tadm_reference_channel.reset_index()[['ParserID', 'CurveID', 'Test Guid', 'Replicate Number', 'Time', 'Channel', 'Delta Time', 'LiquidClassName', 'StepType']]#.sort_values('Delta Time')
             
             ##Filter to make sure that we are only grabbing TADMs that we would expect based on process.
             if main_process == 'LHPB':
@@ -444,10 +544,45 @@ class TadmHelper:
             else:
                 tadm_reference_channel = tadm_reference_channel[((tadm_reference_channel['LiquidClassName'].str.contains(main_process)))]
 
+            ##Add LiquidHandlingProcessOrder
+            tadm_reference_channel['LiquidHandlingProcessOrder'] = tadm_reference_channel['LiquidClassName']+'_'+tadm_reference_channel['StepType']
+            tadm_reference_channel['LiquidHandlingProcessOrder'] = tadm_reference_channel['LiquidHandlingProcessOrder'].str.replace('Reschedule_', '')
+            tadm_reference_channel['LiquidHandlingProcessOrder'] = tadm_reference_channel['LiquidHandlingProcessOrder'].replace(my_gui.myParser.adf_TADM_order[assay][specimenType])
+            tadm_reference_channel.sort_values(['Delta Time'],inplace=True)
+            
+            ##Logic to follow if executing under assumption that sample IS NOT rescheduled.
+            if reschedule == 0:
+                for idx in tadm_reference_channel.index:
+                    try:
+                        if tadm_reference_channel.loc[idx, 'LiquidHandlingProcessOrder']!=tadm_reference_channel['LiquidHandlingProcessOrder'].min():
+                            tadm_reference_channel.drop(idx, inplace=True)
+                        else: 
+                            break
+                    except TypeError:
+                        print("error in comparing LiquidHandlingProcess Order for Test Guid: "+test_guid)
+            
+            ##Logic to follow if executing under assumption that sample IS rescheduled.
+            else:
+                for idx in tadm_reference_channel.index:
+
+                    ##Do this to prevent Finder from picking up the LhpB Dispense that occured in the prior iteration
+                    ##This seems to happen because LhpB dispense occurs so far after the LhpB Start time that is 
+                    if tadm_reference_channel.loc[idx, 'LiquidHandlingProcessOrder']==6 and tadm_reference_channel.loc[idx, 'Delta Time']<30:
+                        tadm_reference_channel.drop(idx, inplace=True)
+                    
+            ##Relabel TADM Retries for LHPB and LHPC Seal Checks  to make sure we do deleate
+            if main_process == 'LHPB':
+                tadm_reference_channel = relabel_seal_check_retries(tadm_reference_channel, 'NeuMoDx_HighVolumeFilter_Air_DispenseSurface')
+            
+            
+            if main_process == 'LHPC':
+                tadm_reference_channel = relabel_seal_check_retries(tadm_reference_channel, 'NeuMoDx_LHPC1_StandardVolumeFilter_Air_DispenseSurface')
+                tadm_reference_channel = relabel_seal_check_retries(tadm_reference_channel, 'NeuMoDx_LHPC2_StandardVolumeFilter_Air_DispenseSurface')
+
             ##Drop any duplicates that may have been found, keep lowest time delta.
-            tadm_reference_channel.drop_duplicates(['LiquidClassName','StepType'],keep='first',inplace=True)
-            
-            
+            tadm_reference_channel.drop_duplicates(['LiquidHandlingProcessOrder','StepType'],keep='first',inplace=True)
+            tadm_reference_channel['MainProcess'] = main_process
+            tadm_reference_channel['ProcessStartTime'] = minimum_time_bound
             return tadm_reference_channel
 
 
@@ -456,12 +591,11 @@ class TadmHelper:
 
         ##Determine which Channel to work with and if a sample is a aborted, or repeated sample.
         if pd.isnull(channel) or "nan" in channel:
-            print("channel not found error")
             return
 
         elif "," in channel:
             channel_1 = pd.to_numeric(channel[-1])
-            set1 = find_tadms(channel_1)
+            set1 = find_tadms(channel_1, reschedule=1)
             channel_2 = pd.to_numeric(channel[0])
             set2 = find_tadms(channel_2, repeat_offset=1)
             return pd.concat([set1, set2],axis=0).drop_duplicates(['ParserID','CurveID'],keep='first')
@@ -471,12 +605,18 @@ class TadmHelper:
             return set1
 
     def tadm_hunter(self):
-        self.conversion_frame = pd.DataFrame(columns=['ParserID', 'CurveID', 'Test Guid', 'Replicate Number'])
+        self.conversion_frame = pd.DataFrame()
+        limit = 100000 
+        iteration = 0
         for id in self.raw_data_liquid_handle_processes.index.values:
-            for process in ['LHPA', 'LHPB', 'LHPC']:
-                self.conversion_frame = pd.concat([self.conversion_frame, self.closest_match(self.raw_data_liquid_handle_processes.loc[[id]], process)],axis=0)
+            if iteration < limit:
+                for process in ['LHPA', 'LHPB', 'LHPC']:
+                    self.conversion_frame = pd.concat([self.conversion_frame, self.closest_match(self.raw_data_liquid_handle_processes.loc[[id]], process)],axis=0)
+                iteration = iteration + 1 
+            else:
+                break
                 
-        self.conversion_frame = self.conversion_frame[['Test Guid', 'Replicate Number', 'ParserID', 'CurveID']].set_index(['Test Guid','Replicate Number', 'ParserID', 'CurveID'])
+        self.conversion_frame = self.conversion_frame[['Test Guid', 'Replicate Number', 'ParserID', 'CurveID', 'LiquidHandlingProcessOrder']].set_index(['Test Guid','Replicate Number', 'ParserID', 'CurveID', 'LiquidHandlingProcessOrder'])
 
     def tadm_merger(self, include_XPCR_info=0, include_HM_info=0, include_TS_info=0, include_SP_info=0, include_ConsLot_info=0, include_ChannelResult_info=0):
         raw_data_file_columns = ['Test Guid','Sample ID', 'Replicate Number','Overall Result','N500 Serial Number']
@@ -528,7 +668,7 @@ window_width = 1000
 window_height = 400
 windowsize = str(window_width)+"x"+str(window_height)
 root = Tk()
-root.title("TADM Matcher v0.1")
+root.title("TADM Matcher v0.3")
 root.geometry(windowsize)
 my_gui = UI(root)
 root.mainloop()
