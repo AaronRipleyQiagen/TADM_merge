@@ -69,7 +69,6 @@ class UI(Frame):
         self.includeCR.set(0)
         self.includeCRButton = tk.Checkbutton(self.bakFrame, text="Include Channel Result Info", onvalue=1, offvalue=0, variable=self.includeCR, bg='white')
         self.includeCRButton.place(relx=0.675, rely=0.70, anchor='nw', relwidth=0.30, relheight=0.1)
-
     def load_raw_data(self):
         self.ReadingLabels = tk.Label(self.bakFrame, text="Parsing Raw Data", bg='blue', fg='white')
         self.ReadingLabels.place(relx=0, rely=0.825, anchor='nw', relwidth=1, relheight=0.20)
